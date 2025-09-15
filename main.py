@@ -14,6 +14,7 @@ from typing import Optional
 from models.person import PersonCreate, PersonRead, PersonUpdate
 from models.address import AddressCreate, AddressRead, AddressUpdate
 from models.health import Health
+from models.course import CourseCreate, CourseRead, CourseUpdate
 
 port = int(os.environ.get("FASTAPIPORT", 8000))
 
@@ -22,10 +23,11 @@ port = int(os.environ.get("FASTAPIPORT", 8000))
 # -----------------------------------------------------------------------------
 persons: Dict[UUID, PersonRead] = {}
 addresses: Dict[UUID, AddressRead] = {}
+courses: Dict[UUID, CourseRead] = {}
 
 app = FastAPI(
-    title="Person/Address API",
-    description="Demo FastAPI app using Pydantic v2 models for Person and Address",
+    title="Person/Address/Course API",
+    description="Demo FastAPI app using Pydantic v2 models for Person, Address, and Course",
     version="0.1.0",
 )
 
@@ -160,11 +162,96 @@ def update_person(person_id: UUID, update: PersonUpdate):
     return persons[person_id]
 
 # -----------------------------------------------------------------------------
+# Course endpoints
+# -----------------------------------------------------------------------------
+@app.get("/courses", response_model=List[CourseRead], summary="List all courses", tags=["courses"])
+def list_courses(
+    code: Optional[str] = Query(None, description="Filter by course code"),
+    title: Optional[str] = Query(None, description="Filter by course title"),
+    instructor: Optional[str] = Query(None, description="Filter by instructor name"),
+    department: Optional[str] = Query(None, description="Filter by department"),
+    level: Optional[str] = Query(None, description="Filter by course level"),
+    term: Optional[str] = Query(None, description="Filter by term"),
+    year: Optional[int] = Query(None, description="Filter by year"),
+):
+    """
+    Retrieve a list of all courses with optional filtering parameters.
+    """
+    results = list(courses.values())
+    
+    if code is not None:
+        results = [c for c in results if c.code == code]
+    if title is not None:
+        results = [c for c in results if title.lower() in c.title.lower()]
+    if instructor is not None:
+        results = [c for c in results if instructor.lower() in c.instructor.lower()]
+    if department is not None:
+        results = [c for c in results if department.lower() in c.department.lower()]
+    if level is not None:
+        results = [c for c in results if c.level == level]
+    if term is not None:
+        results = [c for c in results if c.term == term]
+    if year is not None:
+        results = [c for c in results if c.year == year]
+    
+    return results
+
+@app.post("/courses", response_model=CourseRead, status_code=201, summary="Create a new course", tags=["courses"])
+def create_course(course: CourseCreate):
+    """
+    Create a new course with the provided information.
+    """
+    course_read = CourseRead(**course.model_dump())
+    courses[course_read.id] = course_read
+    return course_read
+
+@app.get("/courses/{course_id}", response_model=CourseRead, summary="Get a specific course", tags=["courses"])
+def get_course(
+    course_id: UUID = Path(..., description="The UUID of the course to retrieve")
+):
+    """
+    Retrieve details of a specific course by its ID.
+    """
+    if course_id not in courses:
+        raise HTTPException(status_code=404, detail="Course not found")
+    return courses[course_id]
+
+@app.put("/courses/{course_id}", response_model=CourseRead, summary="Update a course", tags=["courses"])
+def update_course(
+    course_id: UUID = Path(..., description="The UUID of the course to update"),
+    update: CourseUpdate = ...,
+):
+    """
+    Update a course's information. Only provided fields will be updated.
+    """
+    if course_id not in courses:
+        raise HTTPException(status_code=404, detail="Course not found")
+    stored = courses[course_id].model_dump()
+    update_data = update.model_dump(exclude_unset=True)
+    if update_data:
+        stored.update(update_data)
+        stored["updated_at"] = datetime.utcnow()
+        courses[course_id] = CourseRead(**stored)
+    return courses[course_id]
+
+@app.delete("/courses/{course_id}", status_code=204, summary="Delete a course", tags=["courses"])
+def delete_course(
+    course_id: UUID = Path(..., description="The UUID of the course to delete")
+):
+    """
+    Delete a course from the system.
+    """
+    if course_id not in courses:
+        raise HTTPException(status_code=404, detail="Course not found")
+    del courses[course_id]
+    return None
+
+# -----------------------------------------------------------------------------
 # Root
 # -----------------------------------------------------------------------------
 @app.get("/")
 def root():
-    return {"message": "Welcome to the Person/Address API. See /docs for OpenAPI UI."}
+    return {"message": "Welcome to the Person/Address/Course API. See /docs for OpenAPI UI."}
 
 # -----------------------------------------------------------------------------
 # Entrypoint for `python main.py`
